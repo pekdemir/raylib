@@ -34,10 +34,11 @@ int main(void)
 {
     // Initialization
     //--------------------------------------------------------------------------------------
-    const int screenWidth = 800;
-    const int screenHeight = 450;
+    const int screenWidth = 1280;
+    const int screenHeight = 720;
 
     SetConfigFlags(FLAG_MSAA_4X_HINT);  // Set MSAA 4X hint before windows creation
+    SetTraceLogLevel(LOG_ALL);
 
     InitWindow(screenWidth, screenHeight, "raylib [core] example - input gamepad");
 
@@ -69,7 +70,8 @@ int main(void)
         Vector2 mousePosition = GetMousePosition();
 
         vibrateButton = (Rectangle){ 10, 70.0f + 20*GetGamepadAxisCount(gamepad) + 20, 75, 24 };
-        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mousePosition, vibrateButton)) SetGamepadVibration(gamepad, 1.0, 1.0, 1.0);
+        //if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mousePosition, vibrateButton)) SetGamepadVibration(gamepad, 1.0, 1.0, 1.0);
+        if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_LEFT_TRIGGER_1) && IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_RIGHT_TRIGGER_1)) SetGamepadVibration(gamepad, 1.0, 1.0, 1.0);
         //----------------------------------------------------------------------------------
 
         // Draw
@@ -80,6 +82,9 @@ int main(void)
 
             if (IsGamepadAvailable(gamepad))
             {
+                if (IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_MIDDLE_RIGHT) && IsGamepadButtonDown(gamepad, GAMEPAD_BUTTON_MIDDLE_LEFT))
+                    break;
+
                 DrawText(TextFormat("GP%d: %s", gamepad, GetGamepadName(gamepad)), 10, 10, 10, BLACK);
 
                 // Get axis values
