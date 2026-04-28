@@ -36,6 +36,8 @@
 #         - Android (ARM, ARM64)
 #     > PLATFORM_MEMORY
 #         - Memory framebuffer output, using software renderer, no OS required
+#     > PLATFORM_TRIMUI (TRIMUI SMART PRO):
+#         - Trimui Smart Pro SDK (SDL backend)
 #
 #   Many thanks to Milan Nikolic (@gen2brain) for implementing Android platform pipeline.
 #   Many thanks to Emanuele Petriglia for his contribution on GNU/Linux pipeline.
@@ -129,9 +131,16 @@ RGFW_LINUX_ENABLE_X11      ?= TRUE
 
 # PLATFORM_DESKTOP_SDL: It requires SDL library to be provided externally
 # WARNING: Library is not included in raylib, it MUST be configured by users
-SDL_INCLUDE_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/include
-SDL_LIBRARY_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/lib
-SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    SDL_DIR = /sdk/usr
+    SDL_INCLUDE_PATH      ?= $(SDL_DIR)/include/SDL2
+    SDL_LIBRARY_PATH      ?= $(SDL_DIR)/lib
+    SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+else
+    SDL_INCLUDE_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/include
+    SDL_LIBRARY_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/lib
+    SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+endif
 
 # Determine if the file has root access (only required to install raylib)
 # "whoami" prints the name of the user that calls him (so, if it is the root user, "whoami" prints "root")
@@ -183,6 +192,14 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     ifndef PLATFORM_SHELL
         PLATFORM_SHELL = sh
     endif
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    PLATFORM_OS = LINUX
+    ifndef PLATFORM_SHELL
+        PLATFORM_SHELL = sh
+    endif
+    TOOLCHAIN_DIR = /sdk/aarch64-linux-gnu-7.5.0-linaro
+    SYSROOT_DIR = /sdk/usr
 endif
 ifeq ($(TARGET_PLATFORM),$(filter $(TARGET_PLATFORM),PLATFORM_WEB PLATFORM_WEB_RGFW))
     ifeq ($(PLATFORM_OS),LINUX)
@@ -275,6 +292,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     GRAPHICS ?= GRAPHICS_API_OPENGL_ES2
     #GRAPHICS = GRAPHICS_API_OPENGL_SOFTWARE # Uncomment to use software rendering
 endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    GRAPHICS ?= GRAPHICS_API_OPENGL_ES2
+    #GRAPHICS = GRAPHICS_API_OPENGL_SOFTWARE # Uncomment to use software rendering
+endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_WEB)
     # On HTML5 OpenGL ES 2.0 is used, emscripten translates it to WebGL 1.0
     GRAPHICS ?= GRAPHICS_API_OPENGL_ES2
@@ -332,6 +353,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
         CC = $(RPI_TOOLCHAIN)/bin/$(RPI_TOOLCHAIN_NAME)-gcc
         AR = $(RPI_TOOLCHAIN)/bin/$(RPI_TOOLCHAIN_NAME)-ar
     endif
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    CC = $(TOOLCHAIN_DIR)/bin/aarch64-linux-gnu-gcc
+    AR = $(TOOLCHAIN_DIR)/bin/aarch64-linux-gnu-ar
 endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_WEB)
     # HTML5 emscripten compiler
@@ -474,6 +499,13 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     CFLAGS += -DEGL_NO_X11
     CFLAGS += -Werror=implicit-function-declaration
 endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    # without EGL_NO_X11 eglplatform.h tears Xlib.h in which tears X.h in
+    # which contains a conflicting type Font
+    CFLAGS += -I$(SDL_DIR)/include -I$(SYSROOT_DIR)/include -I.
+    CFLAGS += -DEGL_NO_X11
+    CFLAGS += -Werror=implicit-function-declaration
+endif
 # Use Wayland display on Linux desktop
 ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_GLFW)
     ifeq ($(PLATFORM_OS), LINUX)
@@ -558,6 +590,9 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
         INCLUDE_PATHS += -I$(RPI_TOOLCHAIN_SYSROOT)/opt/vc/include
     endif
 endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    INCLUDE_PATHS += -I$(SDL_INCLUDE_PATH)
+endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
     NATIVE_APP_GLUE = $(ANDROID_NDK)/sources/android/native_app_glue
     # Include android_native_app_glue.h
@@ -613,6 +648,9 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     ifeq ($(USE_RPI_CROSSCOMPILER), TRUE)
         LDFLAGS += -L$(RPI_TOOLCHAIN_SYSROOT)/opt/vc/lib -L$(RPI_TOOLCHAIN_SYSROOT)/usr/lib
     endif
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    LDFLAGS += -L$(SDL_LIBRARY_PATH)
 endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_ANDROID)
     LDFLAGS += -Wl,-soname,libraylib.$(RAYLIB_API_VERSION).so -Wl,--exclude-libs,libatomic.a
@@ -673,6 +711,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_SDL)
             LDLIBS += -lX11
         endif
     endif
+    LDLIBS += $(SDL_LIBRARIES)
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    LDLIBS = -lz -lbz2 -lGLESv2 -lEGL -lIMGegl -lsrv_um -lusc -lglslcompiler -lm
     LDLIBS += $(SDL_LIBRARIES)
 endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_RGFW)
@@ -814,6 +856,14 @@ else
             endif
         endif
         ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
+                # Compile raylib shared library version $(RAYLIB_VERSION).
+                # WARNING: you should type "make clean" before doing this target
+				$(CC) -shared -o $(RAYLIB_RELEASE_PATH)/lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_VERSION) $(OBJS) $(LDFLAGS) $(LDLIBS)
+				@echo "raylib shared library generated (lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_VERSION)) in $(RAYLIB_RELEASE_PATH)!"
+				cd $(RAYLIB_RELEASE_PATH) && ln -fsv lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_VERSION) lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_API_VERSION)
+				cd $(RAYLIB_RELEASE_PATH) && ln -fsv lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_API_VERSION) lib$(RAYLIB_LIB_NAME).so
+        endif
+        ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
                 # Compile raylib shared library version $(RAYLIB_VERSION).
                 # WARNING: you should type "make clean" before doing this target
 				$(CC) -shared -o $(RAYLIB_RELEASE_PATH)/lib$(RAYLIB_LIB_NAME).so.$(RAYLIB_VERSION) $(OBJS) $(LDFLAGS) $(LDLIBS)

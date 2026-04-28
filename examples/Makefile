@@ -29,6 +29,8 @@
 #         - Linux DRM subsystem (KMS mode)
 #     > PLATFORM_ANDROID:
 #         - Android (ARM, ARM64)
+#     > PLATFORM_TRIMUI:
+#         - Trimui Smart Pro (SDL Backend)
 #
 #   Copyright (c) 2013-2026 Ramon Santamaria (@raysan5)
 #
@@ -102,9 +104,16 @@ RGFW_LINUX_ENABLE_X11      ?= TRUE
 
 # PLATFORM_DESKTOP_SDL: It requires SDL library to be provided externally
 # WARNING: Library is not included in raylib, it MUST be configured by users
-SDL_INCLUDE_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/include
-SDL_LIBRARY_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/lib
-SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    SDL_DIR = /sdk/usr
+    SDL_INCLUDE_PATH      ?= $(SDL_DIR)/include/SDL2
+    SDL_LIBRARY_PATH      ?= $(SDL_DIR)/lib
+    SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+else
+    SDL_INCLUDE_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/include
+    SDL_LIBRARY_PATH      ?= $(RAYLIB_SRC_PATH)/external/SDL2/lib
+    SDL_LIBRARIES         ?= -lSDL2 -lSDL2main
+endif
 
 # Use Wayland display server protocol on Linux desktop (by default it uses X11 windowing system)
 # NOTE: This variable is only used for PLATFORM_OS: LINUX
@@ -160,6 +169,12 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     RAYLIB_PATH        ?= /home/pi/raylib
 endif
 
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    PLATFORM_OS = LINUX
+    TOOLCHAIN_DIR = /sdk/aarch64-linux-gnu-7.5.0-linaro
+    #RAYLIB_PATH        ?= /home/pi/raylib
+endif
+
 # Define raylib release directory for compiled library
 RAYLIB_RELEASE_PATH    ?= $(RAYLIB_PATH)/src
 
@@ -194,6 +209,10 @@ ifeq ($(TARGET_PLATFORM),$(filter $(TARGET_PLATFORM),PLATFORM_WEB PLATFORM_WEB_R
     # WARNING: To compile to HTML5, code must be redesigned
     # to use emscripten.h and emscripten_set_main_loop()
     CC = emcc
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    CC = $(TOOLCHAIN_DIR)/bin/aarch64-linux-gnu-gcc
+    AR = $(TOOLCHAIN_DIR)/bin/aarch64-linux-gnu-ar
 endif
 
 # Define default make program: MAKE
@@ -271,6 +290,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     CFLAGS += -std=gnu99 -DEGL_NO_X11
 endif
 
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    CFLAGS += -I$(SDL_DIR)/include -I$(SYSROOT_DIR)/include -I. -std=gnu99 -DEGL_NO_X11
+endif
+
 # Define include paths for required headers: INCLUDE_PATHS
 # NOTE: Some external/extras libraries could be required (stb, easings...)
 #------------------------------------------------------------------------------------------------
@@ -291,6 +314,9 @@ endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     INCLUDE_PATHS += -I$(RAYLIB_INCLUDE_PATH)
     INCLUDE_PATHS += -I/usr/include/libdrm
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    INCLUDE_PATHS += -I$(SDL_INCLUDE_PATH)
 endif
 
 # Define library paths containing required libs: LDFLAGS
@@ -440,17 +466,17 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_SDL)
     ifeq ($(PLATFORM_OS),LINUX)
         # Libraries for Debian GNU/Linux desktop compiling
         # NOTE: Required packages: libegl1-mesa-dev
-        LDLIBS = -lraylib $(SDL_LIBRARIES) -lGL -lm -lpthread -ldl -lrt
+        LDLIBS = -lraylib $(SDL_LIBRARIES) -lm -lpthread -ldl -lrt
 
         # On X11, addition libraries required
-        LDLIBS += -lX11
+#         LDLIBS += -lX11
         # NOTE: It seems additional libraries are not required any more, latest GLFW just dlopen them
         #LDLIBS += -lXrandr -lXinerama -lXi -lXxf86vm -lXcursor
 
         # On Wayland, additional libraries requires
-        ifeq ($(USE_WAYLAND_DISPLAY),TRUE)
-            LDLIBS += -lwayland-client -lwayland-cursor -lwayland-egl -lxkbcommon
-        endif
+#         ifeq ($(USE_WAYLAND_DISPLAY),TRUE)
+#             LDLIBS += -lwayland-client -lwayland-cursor -lwayland-egl -lxkbcommon
+#         endif
 
         # Explicit link to libc
         ifeq ($(RAYLIB_LIBTYPE),SHARED)
@@ -505,6 +531,17 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
     #ifeq ($(GRAPHICS),GRAPHICS_API_OPENGL_ES2)
     #    LDLIBS += -lGLESv2 -lEGL
     #endif
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
+    LDFLAGS += -L$(SDL_LIBRARY_PATH)
+    #LDFLAGS += -L$(SYSROOT_DIR)/lib -L$(SYSROOT_DIR)/lib/mali -Wl,-rpath-link=$(SYSROOT_DIR)/lib/mali
+    LDFLAGS += -L../src
+    #LDLIBS = -lraylib $(SDL_LIBRARIES) -lm -lpthread -ldl -lrt
+    LDLIBS = -lraylib $(SDL_LIBRARIES) -lz -lbz2 -lGLESv2 -lEGL -lIMGegl -lsrv_um -lusc -lglslcompiler -lm -lpthread -lrt -ldl -latomic
+    # Explicit link to libc
+    ifeq ($(RAYLIB_LIBTYPE),SHARED)
+        LDLIBS += -lc
+    endif
 endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_WIN32)
     # Libraries for Windows desktop compilation
@@ -795,6 +832,10 @@ ifeq ($(TARGET_PLATFORM),PLATFORM_DESKTOP_GLFW)
     endif
 endif
 ifeq ($(TARGET_PLATFORM),PLATFORM_DRM)
+	find . -type f -executable -delete
+	rm -fv *.o
+endif
+ifeq ($(TARGET_PLATFORM),PLATFORM_TRIMUI)
 	find . -type f -executable -delete
 	rm -fv *.o
 endif
